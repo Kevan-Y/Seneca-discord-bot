@@ -1,13 +1,37 @@
 require('dotenv').config();
-
 const { Client, MessageEmbed } = require('discord.js');
+const Twitter = require('twitter-lite');
 
 const client = new Client();
 let channelID = '';
-let intervalCall;
+let stream;
+const parameters = {
+	follow: process.env.USER_ID,
+};
+const twitterClient = new Twitter({
+	consumer_key: process.env.CONSUMER_KEY,
+	consumer_secret: process.env.CONSUMER_SECRET,
+	access_token_key: process.env.ACCESS_TOKEN_KEY,
+	access_token_secret: process.env.ACCESS_TOKEN_SECRET,
+});
+
+const updateCountMenbers = (guild) => {
+	client.user.setActivity(`Member: ${guild.memberCount.toLocaleString()}`, {
+		type: 'PLAYING',
+	});
+};
 
 client.on('ready', () => {
 	console.log(`${client.user.tag} has logged in.`);
+	const guild = client.guilds.cache.get(process.env.GUILD_ID);
+	updateCountMenbers(guild);
+});
+
+client.on('guildMemberAdd', (member) => {
+	updateCountMenbers(member.guild);
+});
+client.on('guildMemberRemove', (member) => {
+	updateCountMenbers(member.guild);
 });
 
 client.on('message', (message) => {
@@ -21,9 +45,7 @@ client.on('message', (message) => {
 	const command = args.shift().toLowerCase();
 
 	if (command === 'ping') {
-		console.log('ping');
-		// send back "Pong." to the channel the message was sent in
-		message.channel.send('Pong.');
+		message.channel.send(`🏓API Latency is ${Math.round(client.ws.ping)}ms`);
 	} else if (command === 'set-channel') {
 		//Check if the user has ADMINISTRATOR permissions
 		if (message.member.permissions.has('ADMINISTRATOR')) {
@@ -44,25 +66,33 @@ client.on('message', (message) => {
 							.setTitle('Set Channel')
 							.setDescription(`News set to <#${args[0]}>`);
 						message.channel.send(setChannelEmbed);
-						sendChannelById.send('hELLO').catch((err) => {
-							console.log(err);
-						});
-						intervalCall = setInterval(() => {
-							sendChannelById.send('hELLO').catch((err) => {
-								//Error handling on send, will clear the id and stop intervalCall
-								clearInterval(intervalCall);
+						stream = twitterClient
+							.stream('statuses/filter', parameters)
+							.on('start', () => console.log('start'))
+							.on('data', (tweet) => {
+								if (!tweet.delete) {
+									console.log('data', tweet.text, tweet);
+									sendChannelById
+										.send(
+											`https://twitter.com/{${tweet.user.screen_name}}/status/${tweet.id_str}`,
+										)
+										.catch((err) => {
+											console.log(err);
+										});
+								}
+							})
+							.on('ping', () => console.log('ping twitter'))
+							.on('error', (error) => {
+								console.log('error', error);
+								const stopEmbed = new MessageEmbed();
+								stopEmbed
+									.setColor('#00FF00')
+									.setTitle('API Error')
+									.setDescription(`Bot stop updating new to <#${channelID}>`);
 								channelID = '';
-								const setChannelErrorEmbed = new MessageEmbed();
-								setChannelErrorEmbed
-									.setColor('#FF0000')
-									.setTitle('$set-channel error')
-									.setDescription(
-										`Error occured.\n <$stop> run. News update stop!`,
-									);
-								message.channel.send(setChannelErrorEmbed);
-								console.log(err);
-							});
-						}, 5000);
+								message.channel.send(stopEmbed);
+							})
+							.on('end', () => console.log('end'));
 					} else {
 						//Error channel type and existent
 						const setChannelErrorEmbed = new MessageEmbed();
@@ -97,14 +127,16 @@ client.on('message', (message) => {
 			}
 		} else {
 			//Error user don't have permission
-			setChannelEmbed
+			const setChannelErrorEmbed = new MessageEmbed();
+			setChannelErrorEmbed
 				.setColor('#FF0000')
 				.setTitle('$set-channel error')
 				.setDescription(`Sorry you don't have the permission!`);
+			message.channel.send(setChannelErrorEmbed);
 		}
 	} else if (command === 'stop') {
-		//Clear intervalCall and channelID
-		clearInterval(intervalCall);
+		//Stop stream and channelID
+		stream.destroy();
 		const stopEmbed = new MessageEmbed();
 		stopEmbed
 			.setColor('#00FF00')
