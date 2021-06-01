@@ -71,7 +71,6 @@ client.on('message', (message) => {
 							.on('start', () => console.log('start'))
 							.on('data', (tweet) => {
 								if (!tweet.delete) {
-									console.log('data', tweet.text, tweet);
 									sendChannelById
 										.send(
 											`https://twitter.com/{${tweet.user.screen_name}}/status/${tweet.id_str}`,
