@@ -70,7 +70,7 @@ client.on('message', (message) => {
 							.stream('statuses/filter', parameters)
 							.on('start', () => console.log('start'))
 							.on('data', (tweet) => {
-								if (!tweet.delete) {
+								if (!tweet.delete && tweet.in_reply_to_status_id === null) {
 									sendChannelById
 										.send(
 											`https://twitter.com/{${tweet.user.screen_name}}/status/${tweet.id_str}`,
